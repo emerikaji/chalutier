@@ -3,6 +3,7 @@ package digests
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -62,8 +63,12 @@ func DigestVersion(registry string, fullDigest string) (version string, err erro
 		return
 	}
 
-	namespace, name, digest :=
+	namespace, name, digest, err :=
 		parseDigest(fullDigest)
+
+	if err != nil {
+		return
+	}
 
 	next :=
 		fmt.Sprintf("%s/v2/namespaces/%s/repositories/%s/tags?page_size=100", registry, namespace, name)
@@ -111,12 +116,12 @@ search:
 
 // ─── Parse Digest String ─────────────────────────────────────────────────────
 
-func parseDigest(fullDigest string) (namespace string, name string, digest string) {
+func parseDigest(fullDigest string) (namespace string, name string, digest string, err error) {
 	fullName, digest, ok :=
-		strings.Cut(strings.Split(strings.ReplaceAll(fullDigest, "\n", ""), ",")[0], "@")
+		strings.Cut(fullDigest, "@")
 
 	if !ok {
-		digest = fullDigest
+		return "", "", "", errors.New("incomplete digest")
 	}
 
 	namespace, name, ok =

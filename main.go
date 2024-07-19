@@ -31,7 +31,7 @@ func main() {
 	flag.Parse()
 
 	if len(flag.Args()) != 1 {
-		fmt.Println("Command : chalutier (<docker container id> | -d <image digest>) [-r <docker registry>]")
+		fmt.Println("Usage: chalutier (<container id> | -d <image digest>) [-r <registry>]")
 
 		os.Exit(0)
 	}
