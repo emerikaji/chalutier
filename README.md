@@ -1,6 +1,6 @@
 # Chalutier
 
-Small utility to get the version of a Docker image from its Docker Hub tags.
+Small utility to get the version of a Docker image from its repository tags.
 
 ## Dependencies
 
