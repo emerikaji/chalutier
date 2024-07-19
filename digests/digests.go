@@ -1,56 +1,81 @@
 package digests
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/docker/docker/client"
 )
 
-// ─── Commands ────────────────────────────────────────────────────────────────
+// ─── Init ────────────────────────────────────────────────────────────────────
 
-const (
-	containerInspect = "docker container inspect --format '{{.Image}}' %s"
-	imageInspect     = "docker image inspect --format '{{ join .RepoDigests \",\"}}' %s"
-)
+var dockerClient *client.Client
+
+func init() {
+	var err error
+
+	dockerClient, err = client.NewClientWithOpts(client.WithAPIVersionNegotiation())
+
+	if err != nil {
+		panic(err)
+	}
+}
 
 // ─── Structs ─────────────────────────────────────────────────────────────────
-
-type DockerContainer struct {
-	id        string
-	name      string
-	namespace string
-	digest    string
-	Version   string
-}
 
 type DockerTags struct {
 	NextUrl *string `json:"next"`
 	Results []struct {
-		Id      int    `json:"id"`
 		Version string `json:"name"`
 		Digest  string `json:"digest"`
 	} `json:"results"`
 }
 
-// ─── Compare Digest With Tags ────────────────────────────────────────────────
+// ─── Container Version ───────────────────────────────────────────────────────
 
-func (d *DockerContainer) GetVersion(registry string) (err error) {
-	if d.name == "" || d.digest == "" {
+func ContainerDigest(id string) (fullDigest string, err error) {
+	containerInfo, err := dockerClient.ContainerInspect(context.Background(), id)
+
+	if err != nil {
 		return
 	}
 
+	imageInfo, _, err := dockerClient.ImageInspectWithRaw(context.Background(), containerInfo.Image)
+
+	if err != nil || len(imageInfo.RepoDigests) == 0 {
+		return
+	}
+
+	return imageInfo.RepoDigests[0], nil
+}
+
+// ─── Compare Digest With Tags ────────────────────────────────────────────────
+
+func DigestVersion(registry string, fullDigest string) (version string, err error) {
+	version = "null"
+
+	if fullDigest == "" {
+		return
+	}
+
+	namespace, name, digest :=
+		parseDigest(fullDigest)
+
 	next :=
-		fmt.Sprintf("%s/v2/namespaces/%s/repositories/%s/tags?page_size=100", registry, d.namespace, d.name)
+		fmt.Sprintf("%s/v2/namespaces/%s/repositories/%s/tags?page_size=100", registry, namespace, name)
 
 	tags :=
 		&DockerTags{
 			NextUrl: &next,
 		}
 
+search:
 	for tags.NextUrl != nil {
+
 		var resp *http.Response
 
 		if resp, err = http.Get(*tags.NextUrl); err != nil {
@@ -72,45 +97,14 @@ func (d *DockerContainer) GetVersion(registry string) (err error) {
 		}
 
 		for _, tag := range tags.Results {
-			if d.digest == tag.Digest {
+			if digest == tag.Digest {
 				if regex.Match([]byte(tag.Version)) {
-					d.Version = tag.Version
-					return
+					version = tag.Version
+					break search
 				}
 			}
 		}
 	}
-
-	return
-}
-
-// ─── Inspect ─────────────────────────────────────────────────────────────────
-
-func Inspect(id string) (container *DockerContainer, err error) {
-	imageIdBytes, err :=
-		exec.Command("bash", "-c", fmt.Sprintf(containerInspect, id)).Output()
-
-	if err != nil {
-		return
-	}
-
-	imageDigestsBytes, err :=
-		exec.Command("bash", "-c", fmt.Sprintf(imageInspect, string(imageIdBytes))).Output()
-
-	if err != nil {
-		return
-	}
-
-	imageDigest :=
-		strings.Split(strings.ReplaceAll(string(imageDigestsBytes), "\n", ""), ",")[0]
-
-	container = &DockerContainer{
-		id:      id,
-		Version: "null",
-	}
-
-	container.namespace, container.name, container.digest =
-		parseDigest(imageDigest)
 
 	return
 }

@@ -25,23 +25,25 @@ func main() {
 	containerRegistry :=
 		flag.String("r", "https://hub.docker.com", "Docker registry")
 
+	useDigest :=
+		flag.Bool("d", false, "Utiliser un digest à la place d'un id")
+
 	flag.Parse()
 
-	if len(flag.Args()) > 2 {
-		fmt.Println("Command : chalutier <docker container id> [-r <docker registry>]")
+	if len(flag.Args()) != 1 {
+		fmt.Println("Command : chalutier (<docker container id> | -d <image digest>) [-r <docker registry>]")
 
 		os.Exit(0)
 	}
 
-	containerId :=
-		flag.Args()[0]
+	digest := flag.Args()[0]
 
-	container :=
-		Catch(digests.Inspect(containerId))
+	if !*useDigest {
+		digest =
+			Catch(digests.ContainerDigest(flag.Args()[0]))
+	}
 
-	Catch("", container.GetVersion(*containerRegistry))
-
-	fmt.Print(container.Version)
+	fmt.Print(Catch(digests.DigestVersion(*containerRegistry, digest)))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
